@@ -208,6 +208,54 @@ button.danger {
 .muted { color: var(--muted); font-size: 0.9rem; }
 .err { color: var(--danger); white-space: pre-wrap; }
 
+/* 金丝雀比例 meter：单序列，细条（10px），数据端 4px 圆角、基线端直角；
+   轨道为中性浅灰，语义由颜色+文字双通道承载（不靠颜色单独表意） */
+.canary-meter { display: inline-flex; align-items: center; gap: 0.5rem; min-width: 170px; }
+.canary-track {
+  position: relative;
+  width: 110px;
+  height: 10px;
+  background: #dde2e8;
+  border: 1px solid var(--line);
+  flex-shrink: 0;
+}
+.canary-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 0 4px 4px 0;
+}
+.canary-zero .canary-fill { width: 0 !important; border-radius: 0; }
+.canary-full .canary-fill { background: var(--ok); }
+.canary-canary .canary-fill { background: #c08a2a; }
+.canary-zero .canary-track { background: #e7eaee; }
+.canary-label { font-size: 0.84rem; color: var(--ink); white-space: nowrap; }
+.canary-full .canary-label { font-weight: 700; }
+.ratio-edit { display: inline-flex; gap: 0.35rem; align-items: center; }
+.ratio-edit input { min-width: 80px; width: 80px; }
+.ratio-btn { white-space: nowrap; }
+
+/* 对账结论：语义色只作辅助，结论文字本身已表意 */
+.conclusion {
+  display: inline-block;
+  padding: 0.12rem 0.45rem;
+  border: 1px solid var(--line);
+  font-size: 0.8rem;
+  background: #fff;
+}
+.con-一致 { border-color: var(--ok); color: var(--ok); }
+.con-待下次快照 { border-color: #c08a2a; color: #8a6218; }
+.con-脏比例 { border-color: var(--danger); color: var(--danger); font-weight: 700; }
+.con-未放行 { border-color: var(--steel); color: var(--muted); }
+tr.row-脏比例 td { background: #fbeeec; }
+tr.row-待下次快照 td { background: #fbf5e8; }
+
+/* 对账汇总四态格：边框/底纹作辅助，数字与标签文字本身已表意 */
+.reconcile-tag { border-bottom-width: 3px; }
+.tag-一致 { border-bottom-color: var(--ok); }
+.tag-待下次快照 { border-bottom-color: #c08a2a; }
+.tag-脏比例 { border-bottom-color: var(--danger); }
+.tag-未放行 { border-bottom-color: var(--steel); }
+
 .table-wrap { overflow: auto; }
 table {
   width: 100%;

@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { api } from '../api'
+import CanaryMeter from '../components/CanaryMeter'
 
 export default function Overview() {
   const [data, setData] = useState(null)
@@ -17,13 +18,31 @@ export default function Overview() {
           <div className="stat" key={k}><div className="n">{v}</div><div className="l">{k}</div></div>
         ))}
       </div>
+      <h2>金丝雀分布（真源：发版单物化比例列）</h2>
+      <div className="table-wrap">
+        <table>
+          <thead><tr><th>发版单号</th><th>应用</th><th>状态</th><th>当前环境</th><th>比例分布</th><th>流量暗示</th></tr></thead>
+          <tbody>
+            {(data.金丝雀分布 || []).map((r) => (
+              <tr key={r.编号}>
+                <td>{r.发版单号}</td><td>{r.应用}</td><td>{r.状态}</td><td>{r.环境 || '-'}</td>
+                <td><CanaryMeter ratio={r.金丝雀比例} hint={r.流量暗示} /></td>
+                <td>{r.流量暗示}</td>
+              </tr>
+            ))}
+            {(!data.金丝雀分布 || data.金丝雀分布.length === 0) && (
+              <tr><td colSpan="6" className="muted">暂无在途发版</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
       <h2>在途发版</h2>
       <div className="table-wrap">
         <table>
-          <thead><tr><th>发版单号</th><th>应用</th><th>目标版本</th><th>状态</th><th>当前环境</th><th>流水线</th></tr></thead>
+          <thead><tr><th>发版单号</th><th>应用</th><th>目标版本</th><th>状态</th><th>当前环境</th><th>流水线</th><th>金丝雀比例</th></tr></thead>
           <tbody>
             {(data.在途 || []).map((r) => (
-              <tr key={r.编号}><td>{r.发版单号}</td><td>{r.应用}</td><td>{r.目标版本}</td><td>{r.状态}</td><td>{r.当前环境 || '-'}</td><td>{r.流水线}</td></tr>
+              <tr key={r.编号}><td>{r.发版单号}</td><td>{r.应用}</td><td>{r.目标版本}</td><td>{r.状态}</td><td>{r.当前环境 || '-'}</td><td>{r.流水线}</td><td>{r.金丝雀比例}%</td></tr>
             ))}
           </tbody>
         </table>

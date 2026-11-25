@@ -3,6 +3,8 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from app.db import db, rows_to_list, row_to_dict
 from app.services.common import (
+    RATIO_AUDIT_KIND,
+    RATIO_FROZEN_STATUSES,
     RELEASE_SELECT,
     assert_app_enabled,
     audit,
@@ -10,6 +12,7 @@ from app.services.common import (
     get_setting,
     next_serial,
     now_str,
+    validate_ratio,
 )
 
 router = APIRouter(tags=["发版单"])
@@ -25,6 +28,10 @@ class ReleaseIn(BaseModel):
 
 class PipelineIn(BaseModel):
     流水线: str
+
+
+class RatioIn(BaseModel):
+    金丝雀比例: int
 
 
 @router.get("/发版单")
@@ -46,8 +53,7 @@ def create_release(body: ReleaseIn):
         ratio = body.金丝雀比例
         if ratio is None:
             ratio = int(get_setting(conn, "金丝雀默认比例", "10") or "10")
-        if ratio < 0 or ratio > 100:
-            raise HTTPException(400, "金丝雀比例须在 0 到 100")
+        validate_ratio(ratio)
         serial = next_serial(conn)
         now = now_str()
         cur = conn.execute(
@@ -112,4 +118,36 @@ def set_pipeline(release_id: int, body: PipelineIn):
             (body.流水线, release_id),
         )
         audit(conn, "发版单", release_id, "流水线回执", body.流水线)
+        return row_to_dict(get_release(conn, release_id))
+
+
+@router.post("/发版单/{release_id}/金丝雀比例")
+def set_canary_ratio(release_id: int, body: RatioIn):
+    """比例真源唯一写口：只改物化字段，审计同笔落库。
+
+    与放行共用 BEGIN IMMEDIATE 写事务，撞车时库层串行，不存在双写交错。
+    已放行/回滚/关闭单比例冻结，任何事后请求都改不动真源字段。
+    """
+    validate_ratio(body.金丝雀比例)
+    with db() as conn:
+        r = conn.execute("SELECT * FROM releases WHERE id=?", (release_id,)).fetchone()
+        if not r:
+            raise HTTPException(404, "发版单不存在")
+        if r["status"] in RATIO_FROZEN_STATUSES:
+            raise HTTPException(400, f"{r['status']}发版单比例已冻结，禁止修改")
+        old = r["canary_ratio"]
+        if old == body.金丝雀比例:
+            return row_to_dict(get_release(conn, release_id))
+        # 字段更新与审计记录同一事务提交：半截失败整体回滚，不留脏比例
+        conn.execute(
+            "UPDATE releases SET canary_ratio=? WHERE id=?",
+            (body.金丝雀比例, release_id),
+        )
+        audit(
+            conn,
+            RATIO_AUDIT_KIND,
+            release_id,
+            "修改金丝雀比例",
+            f"{old}% -> {body.金丝雀比例}%",
+        )
         return row_to_dict(get_release(conn, release_id))

@@ -51,6 +51,7 @@ CREATE TABLE IF NOT EXISTS promote_events (
   from_env_id INTEGER,
   to_env_id INTEGER NOT NULL,
   decision TEXT NOT NULL CHECK(decision IN ('放行','拒绝')),
+  canary_ratio INTEGER,
   created_at TEXT NOT NULL,
   note TEXT NOT NULL DEFAULT '',
   FOREIGN KEY(release_id) REFERENCES releases(id),
@@ -107,16 +108,22 @@ WINDOW_STATUSES = ("窗开", "窗关")
 
 def connect() -> sqlite3.Connection:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+    conn = sqlite3.connect(DB_PATH, check_same_thread=False, isolation_level=None)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys=ON")
+    # 写并发排队而非立刻报忙，配合 BEGIN IMMEDIATE 杜绝双写交错
+    conn.execute("PRAGMA busy_timeout=5000")
+    conn.execute("PRAGMA journal_mode=WAL")
     return conn
 
 
 @contextmanager
 def db():
+    # 真源唯一的关键：每个请求一个连接、一笔立即提锁事务，
+    # 改比例与放行撞车时在库层串行，先到者先提交，后到者读到的是新值。
     conn = connect()
     try:
+        conn.execute("BEGIN IMMEDIATE")
         yield conn
         conn.commit()
     except Exception:
@@ -127,8 +134,24 @@ def db():
 
 
 def init_db() -> None:
-    with db() as conn:
+    # executescript 在 autocommit 模式下自行提交，单独使用一个连接，
+    # 不占用写事务连接，避免与 BEGIN IMMEDIATE 冲突。
+    conn = connect()
+    try:
         conn.executescript(SCHEMA)
+        # 旧库兼容：promote_events 补比例痕迹列，并按发版单物化比例回填
+        cols = [r["name"] for r in conn.execute("PRAGMA table_info(promote_events)").fetchall()]
+        if "canary_ratio" not in cols:
+            conn.execute("ALTER TABLE promote_events ADD COLUMN canary_ratio INTEGER")
+        conn.execute(
+            """
+            UPDATE promote_events SET canary_ratio = (
+              SELECT r.canary_ratio FROM releases r WHERE r.id = promote_events.release_id
+            ) WHERE canary_ratio IS NULL
+            """
+        )
+    finally:
+        conn.close()
 
 
 def row_to_dict(row: sqlite3.Row | None) -> dict | None:

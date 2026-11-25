@@ -58,13 +58,18 @@ def promote(release_id: int, body: PromoteIn):
             raise HTTPException(400, "目标环境放行窗已关，禁止晋升")
 
         now = now_str()
-        conn.execute(
+        # 比例痕迹：把放行当下真源字段快照进事件，同事务同提交。
+        # 物化臂下事件只是附件；真源仍在 releases.canary_ratio，事后回放不得回改它。
+        cur = conn.execute(
             """
-            INSERT INTO promote_events(release_id, from_env_id, to_env_id, decision, created_at, note)
-            VALUES (?, ?, ?, '放行', ?, ?)
+            INSERT INTO promote_events(
+              release_id, from_env_id, to_env_id, decision, canary_ratio, created_at, note
+            )
+            VALUES (?, ?, ?, '放行', ?, ?, ?)
             """,
-            (release_id, r["current_env_id"], to_env["id"], now, body.备注),
+            (release_id, r["current_env_id"], to_env["id"], r["canary_ratio"], now, body.备注),
         )
+        event_id = cur.lastrowid
         new_status = "已放行" if body.目标环境 == "产" else "晋升中"
         released_at = now if body.目标环境 == "产" else r["released_at"]
         conn.execute(
@@ -75,5 +80,9 @@ def promote(release_id: int, body: PromoteIn):
         )
         set_app_env_version(conn, r["app_id"], to_env["id"], r["target_version"])
         upsert_instance(conn, r["app_id"], to_env["id"], r["target_version"], "探针绿", release_id)
-        audit(conn, "晋升", release_id, f"晋升到{body.目标环境}", body.备注)
+        # 备注里锚定事件 id，供对账按自增 id 稳定区分事件前后的改比例
+        audit(
+            conn, "晋升", release_id, f"晋升到{body.目标环境}",
+            f"事件{event_id}｜比例快照 {r['canary_ratio']}%".rstrip("｜") + (f"｜{body.备注}" if body.备注 else ""),
+        )
         return row_to_dict(get_release(conn, release_id))

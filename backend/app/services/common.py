@@ -2,9 +2,31 @@ from __future__ import annotations
 from datetime import datetime
 from fastapi import HTTPException
 
+# 比例真源（物化臂）：releases.canary_ratio 是唯一真源字段。
+# 只有在途单允许改比例；放行/回滚落定后比例冻结，事件与回放均不得回改它。
+RATIO_EDITABLE_STATUSES = ("待入闸", "已入闸", "晋升中")
+RATIO_FROZEN_STATUSES = ("已放行", "回滚中", "已回滚", "已关闭")
+RATIO_AUDIT_KIND = "金丝雀"
+
 
 def now_str() -> str:
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
+def validate_ratio(ratio: int) -> None:
+    if not isinstance(ratio, int) or ratio < 0 or ratio > 100:
+        raise HTTPException(400, "金丝雀比例须为 0 到 100 的整数")
+
+
+def traffic_hint(ratio: int | None) -> str:
+    """实例切流观感：只解读真源字段，不另立口径。"""
+    if ratio is None:
+        return "未挂发版单"
+    if ratio >= 100:
+        return "全量"
+    if ratio <= 0:
+        return "零流量（基线存量）"
+    return f"金丝雀 {ratio}%"
 
 
 def audit(conn, kind: str, ref_id: int | None, action: str, note: str = "") -> None:
